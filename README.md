@@ -1,6 +1,8 @@
-# 🌟某星签到(网页版)
+# 学习通自动签到 · 全类型 · 全功能 · 含群聊拍照签到
 
-<a href="https://www.npmjs.com/package/nuxt/v/rc"><img alt="size" src="https://img.shields.io/github/package-json/dependency-version/kuizuo/chaoxing-sign/dev/nuxt?style=flat&colorA=002438&colorB=28CF8D"></a> <a href="https://github.com/kuizuo/chaoxing-sign/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/kuizuo/chaoxing-sign/ci.yml?style=flat&colorA=002438&colorB=28CF8D"></a>  <a href="https://github.com/kuizuo/chaoxing-sign/tree/HEAD/LICENSED"><img alt="License" src="https://img.shields.io/github/license/kuizuo/chaoxing-sign?style=flat&colorA=002438&colorB=28CF8D" /></a>
+<a href="https://www.npmjs.com/package/nuxt/v/rc"><img alt="size" src="https://img.shields.io/github/package-json/dependency-version/kuizuo/chaoxing-sign/dev/nuxt?style=flat&colorA=002438&colorB=28CF8D"></a>  <a href="https://github.com/kuizuo/chaoxing-sign/tree/HEAD/LICENSED"><img alt="License" src="https://img.shields.io/github/license/kuizuo/chaoxing-sign?style=flat&colorA=002438&colorB=28CF8D" /></a>
+
+> Fork 自 [kuizuo/chaoxing-sign](https://github.com/kuizuo/chaoxing-sign)（MIT）。在上游基础上补齐了**普通群（自建群 / 院系群 / 纯通知群）里的拍照签到**——这类签到不在班级活动表里，走的是另一套 `/sign/*` 接口，上游完全覆盖不到；同时附赠一个 20 秒把签到链接从手机端抓到剪贴板的双击工具。
 
 在这里你可以在摆脱客户端繁琐的签到流程，让签到不再是你的烦恼。
 
