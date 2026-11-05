@@ -97,3 +97,11 @@ echo This is ONE TIME ONLY, the app trusts user CAs and never needs a reinstall.
 :end
 endlocal
 exit /b 0
+
+:fail
+echo.
+echo [x] Aborted before touching the phone. Nothing to revoke.
+echo     Need: adb (USB debugging allowed) + pip install mitmproxy
+pause
+endlocal
+exit /b 1
