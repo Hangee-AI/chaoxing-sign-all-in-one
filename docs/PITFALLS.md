@@ -62,3 +62,30 @@ import cheerio from 'cheerio'       // ❌
 
 诊断接口统一挂在 `server/api/cx/accounts/[uid]/` 下。删文件会让 Nitro 重启时崩，
 所以调试完要留档的就写进文档，别留一堆一次性端点。
+
+## 10. 抓包脚本崩溃 = 手机永久断网（最坑的一个）
+
+旧脚本的顺序是：`start mitmdump` → 睡 4 秒 → `adb reverse` → `settings put global http_proxy 127.0.0.1:8080`。
+如果 mitmdump 没起来、窗口被关掉、或脚本被 Ctrl+C 中断，**手机代理不会被还原**，
+之后手机上所有网页都是 `net::ERR_EMPTY_RESPONSE`（看起来像「网页无法打开」，很容易被误判成证书问题）。
+
+修复：见 `docs/QUICK-SIGN.md`。要点：
+- 设代理前先 `Test-Port 8080`，确认 mitmdump 真在监听；
+- 主体包在 `try/finally`，抓完/超时/异常都执行 `http_proxy :0` + `adb reverse --remove-all` + 杀 mitmdump；
+- 每次启动先自愈一次（清残留代理）；
+- 保留 `还原手机网络.bat` 作为手动兜底。
+
+顺带：`adb shell settings get global http_proxy` 如果返回 `127.0.0.1:8080` 而 PC 上 8080 没监听，
+就是这个坑；直接 `settings put global http_proxy :0` 即可。
+
+## 11. GET /api/cx/... 必须在 query 里带 uid
+
+`server/middleware/2.cx.ts` 的 GET 分支是 `context.params?.uid || getQuery(event)?.uid`，
+middleware 跑在路由参数解析之前，`context.params.uid` 通常是空的——
+所以调用方（包括 curl、`PhotoSignModal`）都要显式带 `?uid=xxx`，否则 400「请求账号不存在」。
+
+## 12. 免登录页面用 `definePageMeta({ auth: false })`
+
+`globalAppMiddleware` 开着时所有页面都要 next-auth 会话；手机端自用的 `/quick-sign` 用
+`definePageMeta({ auth: false, layout: false })` 绕过。它对应的接口别放在 `/api/cx` 下
+（那里有鉴权 middleware），放 `/api/quick-sign` 即可。

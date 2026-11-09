@@ -50,8 +50,8 @@ GET  https://mobilelearn.chaoxing.com/sign/signReceipt2                   签到
 ## 抓包配方（一次性装证书，之后每次 20 秒）
 
 ```
-capture-tool\chaoxing-grab-sign.bat        # 双击，或命令行运行
-capture-tool\chaoxing-grab-sign.bat cert   # 首次：把 CA 推到手机 /sdcard/Download/
+一键拍照签到.bat                          # 双击；等价于 pwsh -File capture-tool\quick-sign.ps1
+还原手机网络.bat                          # 出事时一键恢复手机代理
 ```
 
 原理：`adb reverse tcp:8080 tcp:8080` + `adb shell settings put global http_proxy 127.0.0.1:8080`，让手机流量走 PC 上的 `mitmdump`，addon 只匹配 `/sign/preSign?…activeId=…&chatId=…` 这一条 URL。脚本无论成功还是超时都会撤销代理、杀掉 mitmdump。学习通 App **信任用户安装的 CA，没有证书校验**，所以证书装一次长期有效。
