@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>拍照签到</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 18px 14px 40px;
+    font-family: -apple-system, "HarmonyOS Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #eef2f8; color: #17202c;
+  }
+  .card { max-width: 560px; margin: 0 auto; background: #fff; border-radius: 18px; padding: 20px 18px; box-shadow: 0 6px 24px rgba(26, 43, 68, .10); }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .hint { color: #5b6b80; font-size: 14px; margin: 0 0 18px; line-height: 1.5; }
+  label { display: block; font-size: 13px; color: #5b6b80; margin: 14px 0 6px; }
+  textarea { width: 100%; min-height: 92px; resize: vertical; padding: 10px; border: 1px solid #cfd8e6; border-radius: 10px; font-size: 13px; line-height: 1.5; background: #fbfcfe; color: #17202c; word-break: break-all; }
+  .parsed { font-size: 13px; margin: 8px 0 0; color: #2f7a4a; min-height: 18px; }
+  .parsed.bad { color: #b4541f; }
+  input[type=file] { width: 100%; padding: 14px 10px; border: 1px dashed #b9c6d8; border-radius: 12px; background: #fbfcfe; font-size: 14px; }
+  #preview { display: block; max-width: 100%; max-height: 260px; margin-top: 10px; border-radius: 12px; border: 1px solid #e2e8f2; }
+  #preview[hidden] { display: none !important; }
+  button {
+    width: 100%; margin-top: 20px; padding: 15px 12px; border: 0; border-radius: 12px;
+    background: #1f6feb; color: #fff; font-size: 17px; font-weight: 600; letter-spacing: .5px;
+  }
+  button:disabled { background: #93a7c4; }
+  .msg { margin-top: 14px; font-size: 15px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+  .msg.ok { color: #17773f; font-weight: 600; }
+  .msg.bad { color: #b3261e; }
+  .msg.busy { color: #5b6b80; }
+  .foot { margin-top: 16px; font-size: 12px; color: #8b98ab; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>拍照签到</h1>
+  <p class="hint">链接抓到后会自动填好，你只要选一张照片，点「提交签到」。</p>
+
+  <label for="link">签到链接</label>
+  <textarea id="link" placeholder="把学习通的签到链接粘这里"></textarea>
+  <p id="parsed" class="parsed"></p>
+
+  <label for="photo">照片</label>
+  <input id="photo" type="file" accept="image/*">
+  <img id="preview" alt="预览" hidden>
+
+  <button id="go" type="button">提交签到</button>
+  <div id="msg" class="msg"></div>
+
+  <p class="foot">结果会同步写进数据库的签到记录，学习通返回的原文也会显示在上面。</p>
+</div>
+
+<script>
+(function () {
+  var linkEl = document.getElementById('link');
+  var photoEl = document.getElementById('photo');
+  var preview = document.getElementById('preview');
+  var parsed = document.getElementById('parsed');
+  var msg = document.getElementById('msg');
+  var go = document.getElementById('go');
+
+  var AID = /(?:activePrimaryId|propertyId|activeId|aid)=(\d{6,})/i;
+  var CID = /(?:chatId|chatid)=([^&#\s]+)/i;
+
+  function parseLink() {
+    var l = linkEl.value.trim();
+    var a = (l.match(AID) || [])[1] || '';
+    var c = (l.match(CID) || [])[1] || '';
+    if (a && c) {
+      parsed.className = 'parsed';
+      parsed.textContent = '已识别：活动 ' + a + ' · 群 ' + c;
+    } else {
+      parsed.className = 'parsed bad';
+      parsed.textContent = l ? '还没认出来，链接里要有 activeId= 和 chatId=' : '';
+    }
+    return { a: a, c: c };
+  }
+
+  function show(text, kind) {
+    msg.className = 'msg ' + (kind || '');
+    msg.textContent = text;
+  }
+
+  var params = new URLSearchParams(location.search);
+  var fromQuery = params.get('link');
+  if (fromQuery) linkEl.value = fromQuery;
+  parseLink();
+  linkEl.addEventListener('input', parseLink);
+
+  photoEl.addEventListener('change', function () {
+    var f = photoEl.files && photoEl.files[0];
+    if (f) {
+      if (preview.dataset.url) URL.revokeObjectURL(preview.dataset.url);
+      preview.dataset.url = URL.createObjectURL(f);
+      preview.src = preview.dataset.url;
+      preview.hidden = false;
+    } else {
+      preview.hidden = true;
+    }
+  });
+
+  go.addEventListener('click', function () {
+    var info = parseLink();
+    var file = photoEl.files && photoEl.files[0];
+    if (!linkEl.value.trim()) { show('先把签到链接粘进来', 'bad'); return; }
+    if (!info.a || !info.c) { show('链接里没找到 activeId / chatId，确认是不是签到卡片那条链接', 'bad'); return; }
+    if (!file) { show('先点上面的「照片」框，选一张照片', 'bad'); return; }
+
+    var fd = new FormData();
+    fd.append('link', linkEl.value.trim());
+    fd.append('photo', file, file.name || 'photo.jpg');
+
+    go.disabled = true;
+    show('正在提交，别关页面…', 'busy');
+
+    fetch('/api/quick-sign', { method: 'POST', body: fd })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        var d = res.j && res.j.data;
+        if (res.ok && d && d.result) { show('✅ ' + d.result, 'ok'); }
+        else { show('❌ ' + ((res.j && (res.j.message || res.j.statusMessage)) || '提交失败'), 'bad'); }
+      })
+      .catch(function (e) { show('❌ 请求出错：' + (e && e.message ? e.message : e), 'bad'); })
+      .then(function () { go.disabled = false; });
+  });
+})();
+</script>
+</body>
+</html>

@@ -126,6 +126,25 @@ Vercel 或 Netlify 的服务器设立在国外，用户需要通过一些特殊�
 
 学习通 App 信任用户 CA，没有证书校验，所以证书装一次长期有效。
 
+手机端上传页是 `public/quick-sign.html`（**纯静态 + 原生 JS**，不经过 Nuxt 前端框架）——这样即使项目路径带中文、dev 模式下 Vue 页面 hydration 失败，提交按钮也照样能用。
+
+## 📤 分享给别人
+
+三种方式，按省事程度排：
+
+| 方式 | 适合 | 对方要做什么 |
+| --- | --- | --- |
+| **发 GitHub 仓库链接**（推荐） | 同学自己折腾 | `git clone` + 照 [docs/INSTALL.md](./docs/INSTALL.md) 装 Node/PostgreSQL/`pnpm install`/`prisma db push` |
+| **发打包的 zip** | 不想让对方面对 git | 解压后同样照 INSTALL.md（`node_modules` 不在包里，第一次要 `pnpm install`） |
+| **让对方连你的服务** | 只在同一 WiFi / 临时用 | 不推荐：数据库和 Cookie 都是你的账号数据，多人共用容易被风控 |
+
+**对方可以完全不装抓包工具**：只要拿得到签到链接（自己复制也行），打开 `http://电脑IP:8050/quick-sign.html` 粘贴链接 + 选照片就能签。抓包那套（adb + mitmproxy + 证书）只是省手工。
+
+> ⚠️ 不要分享：`.env`（数据库口令）、数据库导出（含 `CxAccount.cookies`，等于你的学习通登录态）、`node_modules`。
+> 也不要让多人共用同一套服务签各自的号——超星对异地登录/异常设备有风控，代签风险自负。
+
+从零部署的完整步骤见 **[docs/INSTALL.md](./docs/INSTALL.md)**（含两条路线、常见问题、合规提醒）。
+
 **另外提醒两点：**
 
 1. 应用会把学习通账号的 **Cookie 明文存进你自己的 PostgreSQL**（`CxAccount.cookies`），`.env` 里有数据库口令。不要把这套服务部署到公网，也不要提交 `.env`。

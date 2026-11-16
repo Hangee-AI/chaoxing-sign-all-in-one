@@ -86,6 +86,22 @@ middleware 跑在路由参数解析之前，`context.params.uid` 通常是空的
 
 ## 12. 免登录页面用 `definePageMeta({ auth: false })`
 
-`globalAppMiddleware` 开着时所有页面都要 next-auth 会话；手机端自用的 `/quick-sign` 用
+`globalAppMiddleware` 开着时所有页面都要 next-auth 会话；手机端自用的签到页用
 `definePageMeta({ auth: false, layout: false })` 绕过。它对应的接口别放在 `/api/cx` 下
 （那里有鉴权 middleware），放 `/api/quick-sign` 即可。
+
+## 13. 项目路径带中文 → dev 模式前端 JS 404，页面「点了没反应」
+
+现象：页面能打开、SSR 内容正常，但**所有按钮点了都没反应**；「选择照片」还能弹相册，
+因为那是浏览器原生 `<input type=file>` 的行为，不需要 JS。
+
+定位：`curl http://127.0.0.1:8050/quick-sign` 的 HTML 里，入口脚本是
+`/_nuxt/C:/Users/.../超星群聊拍照签到/node_modules/.../app/entry.js` 这种**带绝对路径的 URL**，
+取回来是 **404**，于是 Nuxt 客户端永远不会 hydration（连 `nuxt build` 也会在 prerender 阶段报
+`The argument 'filename' must be a file URL object ... Received 'file:///_entry.js'`）。
+
+绕开：手机端要用的页面写成 `public/quick-sign.html`（纯静态 + 原生 JS + `fetch`），
+由 Nitro 直接当静态文件吐出去，完全不经过 Vue hydration。
+
+根治：把项目目录改成**纯 ASCII 路径**（例如 `C:\Users\18007\Desktop\chaoxing-sign`），
+然后重装依赖（pnpm 在 Windows 用 junction，移动后要 `pnpm install` 重建）并重新 `nuxi dev`。

@@ -1,10 +1,10 @@
-﻿<#
+<#
   一键拍照签到（Windows）
   ---------------------------------------------
   1) 自愈：先把手机上一次残留的代理/reverse 清掉（之前脚本崩溃会把手机搞断网）
   2) 起 mitmdump 抓签到链接：先确认 8080 真的在监听，才去设手机代理
   3) 抓到链接后立刻恢复手机网络
-  4) 把 quick-sign 页面推到手机浏览器（adb reverse 8050），你在手机上选照片、点签到
+  4) 把 quick-sign.html 页面推到手机浏览器（adb reverse 8050），你在手机上选照片、点签到
 
   用法：
     双击 一键拍照签到.bat
@@ -101,9 +101,10 @@ function Ensure-Postgres {
 }
 
 function Wait-WebServer {
+  # 用静态页探活：首页 / 需要 next-auth 会话、偶发 500，不能代表服务没起来
   for ($i = 0; $i -lt 90; $i++) {
     try {
-      $resp = Invoke-WebRequest -Uri "http://127.0.0.1:$webPort/" -UseBasicParsing -TimeoutSec 5
+      $resp = Invoke-WebRequest -Uri "http://127.0.0.1:$webPort/quick-sign.html" -UseBasicParsing -TimeoutSec 5
       if ($resp.StatusCode -in 200, 302) { return }
     }
     catch {
@@ -116,7 +117,9 @@ function Wait-WebServer {
 
 function Open-SignPage([string]$signLink) {
   $encoded = [uri]::EscapeDataString($signLink)
-  $url = "http://127.0.0.1:$webPort/quick-sign?link=$encoded"
+  # 用 public/quick-sign.html：纯静态 + 原生 JS，不依赖 Nuxt 客户端 hydration
+  # （项目路径带中文时 dev 模式的 entry.js 会 404，Vue 页面的按钮点了没反应）
+  $url = "http://127.0.0.1:$webPort/quick-sign.html?link=$encoded"
 
   if (Test-Path $adb) {
     & $adb reverse tcp:$webPort tcp:$webPort 2>$null | Out-Null
@@ -167,15 +170,21 @@ try {
     Remove-Item $outFile -ErrorAction SilentlyContinue
 
     Write-Step '启动 mitmdump（隐藏窗口）'
+    # 端口被上一次残留的 mitmdump 占着的话先清掉，否则新进程会 bind 失败
+    if (Test-Port $mitmPort) {
+      Get-Process mitmdump -ErrorAction SilentlyContinue | Stop-Process -Force
+      for ($i = 0; $i -lt 20 -and (Test-Port $mitmPort); $i++) { Start-Sleep -Milliseconds 250 }
+    }
     $script:mitmProc = Start-Process -FilePath $mitm -ArgumentList @('-p', "$mitmPort", '--ssl-insecure', '-s', $addon, '--set', 'flow_detail=0') -WindowStyle Hidden -PassThru
 
+    # 冷启动（含杀毒软件扫描）可能要 20 秒以上，给到 30 秒
     $listening = $false
-    for ($i = 0; $i -lt 30; $i++) {
+    for ($i = 0; $i -lt 60; $i++) {
       if (Test-Port $mitmPort) { $listening = $true; break }
       if ($script:mitmProc.HasExited) { break }
       Start-Sleep -Milliseconds 500
     }
-    if (-not $listening) { throw 'mitmdump 没能在 8080 监听，这次不设代理，手机不受影响' }
+    if (-not $listening) { throw 'mitmdump 没能在 8080 监听（可能被杀毒软件拦了或端口占用），这次不设代理，手机不受影响' }
 
     Write-Step '8080 已监听，挂到手机上并设置代理'
     & $adb reverse tcp:$mitmPort tcp:$mitmPort 2>$null | Out-Null
