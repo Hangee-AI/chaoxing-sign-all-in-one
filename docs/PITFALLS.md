@@ -105,3 +105,27 @@ middleware 跑在路由参数解析之前，`context.params.uid` 通常是空的
 
 根治：把项目目录改成**纯 ASCII 路径**（例如 `C:\Users\18007\Desktop\chaoxing-sign`），
 然后重装依赖（pnpm 在 Windows 用 junction，移动后要 `pnpm install` 重建）并重新 `nuxi dev`。
+
+## 14. `.ps1` 脚本必须带 UTF-8 BOM，否则 PowerShell 5.1 会整篇语法报错
+
+症状（双击 `一键拍照签到.bat` 跑出来的）：
+
+```
+Unexpected token '}' in expression or statement.
+The Try statement is missing its Catch or Finally block.
+The string is missing the terminator: ".
+```
+
+而且报错行里出现乱码（`itmdump 埋靶 8080 …`）。
+
+原因：Windows PowerShell 5.1 读**没有 BOM 的** `.ps1` 时按系统 ANSI（中文系统是 GBK）解码，
+脚本里的中文注释/提示先被解成乱码，引号和花括号配对随之崩掉。PowerShell 7（pwsh）默认按 UTF-8 读，
+所以「开发机上好好的、发给别人就炸」，或者「`where pwsh` 没找到退回 powershell.exe 就炸」。
+
+规矩：
+
+- `capture-tool/*.ps1` 一律保存为 **UTF-8 with BOM**；
+- 用编辑器/脚本改完这些文件后，重新补一次 BOM；
+- 提交前验证：`powershell.exe -NoProfile -Command "$null=[scriptblock]::Create((Get-Content -Raw 'capture-tool\quick-sign.ps1')); 'OK'"`
+  （PS 5.1 能解析 = BOM 正确）；
+- `.bat` 反而是 **CRLF + 无 BOM**（`chcp 65001` 后面直接写 UTF-8 中文）。
