@@ -51,15 +51,11 @@ export default defineEventHandler(async (event) => {
         },
       })
 
-      if (CXMap.has(cx.user.username))
-        CXMap.set(cx.user.username, cx)
-
-      else
-        CXMap.set(cx.user.username, cx)
+      // 缓存 key 统一用 uid（resolveCx 按 uid 取）
+      CXMap.set(String(cx.user.uid), cx)
     }
     else {
-      if (CXMap.has(cx.user.username))
-        CXMap.delete(cx.user.username)
+      CXMap.delete(String(account.uid))
     }
   }
 

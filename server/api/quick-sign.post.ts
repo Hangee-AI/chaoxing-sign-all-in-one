@@ -1,3 +1,4 @@
+import { CXMap, Cx } from '~~/server/protocol/cx'
 import { SignMode } from '~/constants/cx'
 import { prisma } from '~~/server/utils/db'
 import { resolveCx } from '~~/server/utils/cx-instance'
@@ -57,18 +58,50 @@ export default defineEventHandler(async (event) => {
   if (!account)
     return ResOp.error(400, '数据库里没有学习通账号，请先正常登录一次后面板')
 
-  const cx = resolveCx(account)
+  let cx = resolveCx(account)
   const filename = photo.filename || 'photo.jpg'
 
   let result = ''
   try {
-    // 先问一次状态：空串代表还能签，非空就是「您已签到过了」「签到已结束」之类的提示
-    const status = await cx.preSignGroup(activityId, chatId)
-    result = status || await cx.signPhotoGroup(
-      activityId,
-      await cx.uploadPhotoToPan(photo.data, filename),
-      filename,
-    )
+    // 学习通 cookies 过期时，签到页只会返回「用户未登录」，
+    // 直接往下走会得到误导性的「拿不到提交入口」，所以在库里密码可用时自动重登一次。
+    let html = ''
+    try {
+      html = await cx.groupSignPage(activityId, chatId)
+    }
+    catch {
+      html = ''
+    }
+
+    if (html.includes('用户未登录') && account.username && account.password) {
+      const fresh = new Cx({ username: account.username, password: account.password })
+      const loginResult = await fresh.login().catch(() => null)
+      if (fresh.user.logged) {
+        cx = fresh
+        await prisma.cxAccount.update({
+          where: { uid: fresh.user.uid },
+          data: {
+            cookies: fresh.getCookie('', 'json') as any,
+            info: fresh.user as any,
+            lastLoginTime: new Date(),
+          },
+        })
+        CXMap.set(String(fresh.user.uid), fresh)
+      }
+      else {
+        result = `学习通登录态失效，自动重登也没成功${loginResult ? `（${loginResult}）` : ''}：请到面板里重新登录一次这个账号`
+      }
+    }
+
+    if (!result) {
+      // 先问一次状态：空串代表还能签，非空就是「您已签到过了」「签到已结束」之类的提示
+      const status = await cx.preSignGroup(activityId, chatId)
+      result = status || await cx.signPhotoGroup(
+        activityId,
+        await cx.uploadPhotoToPan(photo.data, filename),
+        filename,
+      )
+    }
   }
   catch (error: any) {
     result = error?.message ?? '签到失败'

@@ -26,7 +26,9 @@ export default defineEventHandler(async (event) => {
   if (!cx.user.logged)
     return new ResOp(201, null, result!)
 
-  CXMap.set(cx.user.username, cx)
+  // 缓存 key 必须和 resolveCx 一致（uid），否则重登后旧实例还在用过期 cookies
+  CXMap.delete(cx.user.username)
+  CXMap.set(String(cx.user.uid), cx)
 
   const account = await event.context.prisma.cxAccount.upsert({
     where: {
