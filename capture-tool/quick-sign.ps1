@@ -32,6 +32,8 @@ $outFile = Join-Path $env:TEMP 'cx-sign-url.txt'
 $addon = Join-Path $env:TEMP 'cx_grab_run.py'
 $nodeExe = 'C:\Users\18007\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe'
 $pnpmJs = 'C:\Users\18007\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\pnpm\bin\pnpm.mjs'
+$script:devLog = Join-Path $env:TEMP 'cx-dev.log'
+$script:devErrLog = Join-Path $env:TEMP 'cx-dev.err.log'
 
 $script:mitmProc = $null
 
@@ -80,12 +82,19 @@ function Start-DevServer {
     }
     $nodeExe = $nodeCmd.Source
   }
-  Write-Step '签到工具没在跑，先启动它（第一次要等 30~90 秒）'
-  if (Test-Path $pnpmJs) {
-    Start-Process -FilePath $nodeExe -ArgumentList @("`"$pnpmJs`"", 'exec', 'nuxi', 'dev', '--port', "$webPort") -WorkingDirectory $root -WindowStyle Minimized
+  Write-Step '签到工具没在跑，先启动它（冷启动可能要 1~2 分钟）'
+  # 输出重定向到 $env:TEMP\cx-dev.log：Nitro 启动失败时能在报错里直接看到原因
+  $stdout = $script:devLog
+  $stderr = $script:devErrLog
+  $devArgs = if (Test-Path $pnpmJs) { @("`"$pnpmJs`"", 'exec', 'nuxi', 'dev', '--port', "$webPort") }
+  else { @('npx', 'nuxi', 'dev', '--port', "$webPort") }
+  try {
+    Start-Process -FilePath $nodeExe -ArgumentList $devArgs -WorkingDirectory $root -WindowStyle Hidden `
+      -RedirectStandardOutput $stdout -RedirectStandardError $stderr | Out-Null
   }
-  else {
-    Start-Process -FilePath $nodeExe -ArgumentList @('npx', 'nuxi', 'dev', '--port', "$webPort") -WorkingDirectory $root -WindowStyle Minimized
+  catch {
+    # 老版本 PowerShell 的重定向参数偶发失败：退回不带重定向
+    Start-Process -FilePath $nodeExe -ArgumentList $devArgs -WorkingDirectory $root -WindowStyle Minimized
   }
 }
 
@@ -93,16 +102,18 @@ function Ensure-Postgres {
   if (Test-Port 5432) { return }
   Write-Step 'WSL 里的 PostgreSQL 没起来，拉起来（保持一个 WSL 窗口存活）'
   Start-Process -FilePath 'wsl.exe' -ArgumentList '-d Ubuntu -e bash -lc "sudo -n service postgresql start; sleep infinity"' -WindowStyle Minimized
-  for ($i = 0; $i -lt 30; $i++) {
-    if (Test-Port 5432) { return }
+  # WSL 冷启动 + systemd-less 的 service 拉起可能要 1 分钟，等够再开始起 dev
+  for ($i = 0; $i -lt 90; $i++) {
+    if (Test-Port 5432) { Start-Sleep -Seconds 1; return }
     Start-Sleep -Seconds 1
   }
-  Write-Warn 'PostgreSQL 还是没起来，签到可能会失败（签到记录写库会报错）'
+  throw 'PostgreSQL 一直没起来（127.0.0.1:5432 连不上）：先在 WSL 里跑 sudo service postgresql start，再重试'
 }
 
 function Wait-WebServer {
   # 用静态页探活：首页 / 需要 next-auth 会话、偶发 500，不能代表服务没起来
-  for ($i = 0; $i -lt 90; $i++) {
+  # 冷启动实测 90~100 秒，给到 240 秒
+  for ($i = 0; $i -lt 120; $i++) {
     try {
       $resp = Invoke-WebRequest -Uri "http://127.0.0.1:$webPort/quick-sign.html" -UseBasicParsing -TimeoutSec 5
       if ($resp.StatusCode -in 200, 302) { return }
@@ -112,7 +123,11 @@ function Wait-WebServer {
     }
     Start-Sleep -Seconds 2
   }
-  throw "等不到 http://127.0.0.1:$webPort 起来"
+  $tail = ''
+  foreach ($f in @($script:devLog, $script:devErrLog)) {
+    if (Test-Path $f) { $tail += (Get-Content $f -Tail 8 -ErrorAction SilentlyContinue) -join [Environment]::NewLine }
+  }
+  throw "等不到 http://127.0.0.1:$webPort 起来。dev 日志最后几行：`n$tail"
 }
 
 function Open-SignPage([string]$signLink) {

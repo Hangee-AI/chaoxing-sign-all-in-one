@@ -129,3 +129,20 @@ The string is missing the terminator: ".
 - 提交前验证：`powershell.exe -NoProfile -Command "$null=[scriptblock]::Create((Get-Content -Raw 'capture-tool\quick-sign.ps1')); 'OK'"`
   （PS 5.1 能解析 = BOM 正确）；
 - `.bat` 反而是 **CRLF + 无 BOM**（`chcp 65001` 后面直接写 UTF-8 中文）。
+
+## 15. 冷启动 dev 要 ~100 秒，且必须等 PostgreSQL 真的起来
+
+现象：双击 `一键拍照签到.bat` 后脚本打印「签到工具没在跑，先启动它」，然后干等，
+最后报 `等不到 http://127.0.0.1:8050 起来`；`%TEMP%\cx-dev.log` 里是
+`Can't reach database server at 127.0.0.1:5432`。
+
+原因：WSL 里 PostgreSQL 冷启动要几十秒，旧脚本只等 30 秒就放弃并直接起 dev，
+dev 连不上库 → Nitro 进程退出 → 之后一直等一个永远不会起来的端口。
+
+修法（`capture-tool\quick-sign.ps1`）：
+- `Ensure-Postgres` 等到 90 秒，还连不上直接抛错（不要带病启动 dev）；
+- `Start-DevServer` 用 `-RedirectStandardOutput/Error` 把日志写到
+  `%TEMP%\cx-dev.log` / `%TEMP%\cx-dev.err.log`，失败时能直接看到原因；
+- `Wait-WebServer` 给到 240 秒（实测冷启动 90~100 秒），超时时把日志最后几行打进异常。
+
+排查结论：`.nuxt` 存在时冷启动约 100 秒，属于正常，不是卡死。
