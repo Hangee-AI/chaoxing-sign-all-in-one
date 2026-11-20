@@ -103,7 +103,7 @@ middleware 跑在路由参数解析之前，`context.params.uid` 通常是空的
 绕开：手机端要用的页面写成 `public/quick-sign.html`（纯静态 + 原生 JS + `fetch`），
 由 Nitro 直接当静态文件吐出去，完全不经过 Vue hydration。
 
-根治：把项目目录改成**纯 ASCII 路径**（例如 `C:\Users\18007\Desktop\chaoxing-sign`），
+根治：把项目目录改成**纯 ASCII 路径**（例如 `C:\Users\you\Desktop\chaoxing-sign`），
 然后重装依赖（pnpm 在 Windows 用 junction，移动后要 `pnpm install` 重建）并重新 `nuxi dev`。
 
 ## 14. `.ps1` 脚本必须带 UTF-8 BOM，否则 PowerShell 5.1 会整篇语法报错
@@ -157,7 +157,7 @@ dev 连不上库 → Nitro 进程退出 → 之后一直等一个永远不会起
 
 **坑 B：把签到链接转发给别人 = 别人签的是链接主人的签到**。
 群签到链接里带 `uid=<链接主人的超星 uid>`，例如
-`...&activeId=22677254&chatId=325091583918082&...&uid=462657756&ut=s`。
+`...&activeId=10000001&chatId=1000000000001&...&uid=100000001&ut=s`。
 对方如果直接拿这条链接去签，签到记录就挂到那个 uid 名下（看着像「怎么用的是你的数据」）。
 已在 `server/api/quick-sign.post.ts` 加校验：链接里的 `uid` 和当前登录账号不一致时直接报
 「这条签到链接属于另一个学习通账号…请用自己的手机抓自己的链接」。
