@@ -24,16 +24,54 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot          # ps1 在 capture-tool\ 里
-$adb = 'C:\Tools\adb\platform-tools\adb.exe'
-$mitm = 'C:\Users\18007\AppData\Local\Programs\Python\Python312\Scripts\mitmdump.exe'
 $mitmPort = 8080
 $webPort = 8050
 $outFile = Join-Path $env:TEMP 'cx-sign-url.txt'
 $addon = Join-Path $env:TEMP 'cx_grab_run.py'
-$nodeExe = 'C:\Users\18007\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe'
-$pnpmJs = 'C:\Users\18007\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\pnpm\bin\pnpm.mjs'
 $script:devLog = Join-Path $env:TEMP 'cx-dev.log'
 $script:devErrLog = Join-Path $env:TEMP 'cx-dev.err.log'
+
+# 全部依赖都按「先找本机 PATH / 常见安装位置」的顺序探测，不写死某一台机器的路径，
+# 这样把 zip 发给别人也能直接跑。
+function Find-Adb {
+  $candidates = @()
+  foreach ($sdk in @($env:ANDROID_HOME, $env:ANDROID_SDK_ROOT)) {
+    if ($sdk) { $candidates += (Join-Path $sdk 'platform-tools\adb.exe') }
+  }
+  $candidates += @(
+    (Join-Path $env:LOCALAPPDATA 'Android\Sdk\platform-tools\adb.exe'),
+    'C:\Tools\adb\platform-tools\adb.exe',
+    (Join-Path $env:ProgramFiles 'Android\platform-tools\adb.exe')
+  )
+  foreach ($p in $candidates) {
+    if ($p -and (Test-Path $p)) { return $p }
+  }
+  $cmd = Get-Command adb -ErrorAction SilentlyContinue
+  if ($cmd) { return $cmd.Source }
+  return $null
+}
+
+function Find-Mitm {
+  $cmd = Get-Command mitmdump -ErrorAction SilentlyContinue
+  if ($cmd) { return $cmd.Source }
+  $candidates = @(
+    (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\Scripts\mitmdump.exe'),
+    (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python311\Scripts\mitmdump.exe'),
+    (Join-Path $env:APPDATA 'Python\Python312\Scripts\mitmdump.exe')
+  )
+  foreach ($p in $candidates) {
+    if (Test-Path $p) { return $p }
+  }
+  $py = Get-Command python -ErrorAction SilentlyContinue
+  if ($py) {
+    $scripts = Join-Path (Split-Path $py.Source -Parent) 'Scripts\mitmdump.exe'
+    if (Test-Path $scripts) { return $scripts }
+  }
+  return $null
+}
+
+$adb = Find-Adb
+$mitm = Find-Mitm
 
 $script:mitmProc = $null
 
@@ -60,7 +98,7 @@ function Test-Port([int]$port) {
 }
 
 function Reset-PhoneProxy {
-  if (Test-Path $adb) {
+  if ($adb -and (Test-Path $adb)) {
     & $adb shell settings put global http_proxy :0 2>$null | Out-Null
     & $adb reverse --remove-all 2>$null | Out-Null
   }
@@ -75,31 +113,52 @@ function Stop-Mitm {
 }
 
 function Start-DevServer {
-  if (-not (Test-Path $nodeExe) -or -not (Test-Path $pnpmJs)) {
-    $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
-    if (-not $nodeCmd) {
-      throw "找不到 node：$nodeExe 不存在，PATH 里也没有 node"
-    }
-    $nodeExe = $nodeCmd.Source
-  }
   Write-Step '签到工具没在跑，先启动它（冷启动可能要 1~2 分钟）'
-  # 输出重定向到 $env:TEMP\cx-dev.log：Nitro 启动失败时能在报错里直接看到原因
+
+  # node 不在 PATH 时，按常见安装位置补进 PATH（别人机器上装了 Node，但 PATH 可能没刷新）
+  if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+    $nodeCandidates = @(
+      (Join-Path $env:ProgramFiles 'nodejs\node.exe'),
+      (Join-Path $env:LOCALAPPDATA 'Programs\nodejs\node.exe'),
+      'C:\Users\18007\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe'
+    )
+    foreach ($cand in $nodeCandidates) {
+      if ($cand -and (Test-Path $cand)) {
+        $env:PATH = (Split-Path $cand -Parent) + ';' + $env:PATH
+        break
+      }
+    }
+  }
+  if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+    throw '找不到 node：请先安装 Node 18+（https://nodejs.org），装完重开一个终端'
+  }
+
+  # pnpm 优先用本机装的；没有就用 corepack / npx
+  $cmd = $null
+  if (Get-Command pnpm -ErrorAction SilentlyContinue) { $cmd = 'pnpm exec nuxi dev --port ' + $webPort }
+  elseif (Get-Command corepack -ErrorAction SilentlyContinue) { $cmd = 'corepack pnpm exec nuxi dev --port ' + $webPort }
+  else {
+    $dshPnpm = 'C:\Users\18007\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\pnpm\bin\pnpm.mjs'
+    if (Test-Path $dshPnpm) { $cmd = '"' + (Get-Command node).Source + '" "' + $dshPnpm + '" exec nuxi dev --port ' + $webPort }
+    else { $cmd = 'npx --yes nuxi@latest dev --port ' + $webPort }
+  }
+
   $stdout = $script:devLog
   $stderr = $script:devErrLog
-  $devArgs = if (Test-Path $pnpmJs) { @("`"$pnpmJs`"", 'exec', 'nuxi', 'dev', '--port', "$webPort") }
-  else { @('npx', 'nuxi', 'dev', '--port', "$webPort") }
   try {
-    Start-Process -FilePath $nodeExe -ArgumentList $devArgs -WorkingDirectory $root -WindowStyle Hidden `
+    Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', "cd /d `"$root`" && $cmd") -WindowStyle Hidden `
       -RedirectStandardOutput $stdout -RedirectStandardError $stderr | Out-Null
   }
   catch {
-    # 老版本 PowerShell 的重定向参数偶发失败：退回不带重定向
-    Start-Process -FilePath $nodeExe -ArgumentList $devArgs -WorkingDirectory $root -WindowStyle Minimized
+    Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', "cd /d `"$root`" && $cmd") -WindowStyle Minimized
   }
 }
 
 function Ensure-Postgres {
   if (Test-Port 5432) { return }
+  if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) {
+    throw 'PostgreSQL 没在跑（127.0.0.1:5432 连不上），而且本机没有 WSL：请先装并启动 PostgreSQL'
+  }
   Write-Step 'WSL 里的 PostgreSQL 没起来，拉起来（保持一个 WSL 窗口存活）'
   Start-Process -FilePath 'wsl.exe' -ArgumentList '-d Ubuntu -e bash -lc "sudo -n service postgresql start; sleep infinity"' -WindowStyle Minimized
   # WSL 冷启动 + systemd-less 的 service 拉起可能要 1 分钟，等够再开始起 dev
@@ -136,7 +195,7 @@ function Open-SignPage([string]$signLink) {
   # （项目路径带中文时 dev 模式的 entry.js 会 404，Vue 页面的按钮点了没反应）
   $url = "http://127.0.0.1:$webPort/quick-sign.html?link=$encoded"
 
-  if (Test-Path $adb) {
+  if ($adb -and (Test-Path $adb)) {
     & $adb reverse tcp:$webPort tcp:$webPort 2>$null | Out-Null
     if (-not $NoOpen) {
       try {
@@ -169,16 +228,20 @@ try {
   Reset-PhoneProxy
   Stop-Mitm
 
-  if (-not (Test-Path $adb)) { throw "找不到 adb：$adb" }
-  $devices = & $adb devices 2>$null | Select-String -Pattern 'device$'
-  if (-not $devices) { throw '没有检测到手机：插好 USB，打开「USB 调试」并允许这台电脑' }
+  $needCapture = [string]::IsNullOrWhiteSpace($Link) -and -not $SkipCapture
+  if ($needCapture) {
+    # 只有需要抓包时才强制要求手机 + adb；别人只粘链接（-Link）用路线一，不用装 adb
+    if (-not $adb) { throw '找不到 adb：请安装 Android platform-tools 并把 adb 加进 PATH（或设置 ANDROID_HOME）' }
+    $devices = & $adb devices 2>$null | Select-String -Pattern 'device$'
+    if (-not $devices) { throw '没有检测到手机：插好 USB，打开「USB 调试」并允许这台电脑' }
+  }
 
   Ensure-Postgres
   if (-not (Test-Port $webPort)) { Start-DevServer }
   Wait-WebServer
 
   if ([string]::IsNullOrWhiteSpace($Link) -and -not $SkipCapture) {
-    if (-not (Test-Path $mitm)) { throw "找不到 mitmdump：$mitm" }
+    if (-not $mitm) { throw '找不到 mitmdump：请先 pip install mitmproxy，装完把 Scripts 目录加进 PATH' }
     $grab = Join-Path $root 'capture-tool\cx_grab.py'
     if (-not (Test-Path $grab)) { throw "找不到抓包脚本：$grab" }
     Copy-Item $grab $addon -Force

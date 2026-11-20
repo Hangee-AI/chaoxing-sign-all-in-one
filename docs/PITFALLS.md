@@ -146,3 +146,21 @@ dev 连不上库 → Nitro 进程退出 → 之后一直等一个永远不会起
 - `Wait-WebServer` 给到 240 秒（实测冷启动 90~100 秒），超时时把日志最后几行打进异常。
 
 排查结论：`.nuxt` 存在时冷启动约 100 秒，属于正常，不是卡死。
+
+## 16. 把脚本发给别人：两层坑（写死路径 + 转发签到链接）
+
+**坑 A：脚本写死了我本机的路径**，别人电脑上必然报「找不到 adb / 找不到 mitmdump / 找不到 node」。
+已改成自动探测：
+- adb：`PATH` → `%ANDROID_HOME%\platform-tools\adb.exe` → `%LOCALAPPDATA%\Android\Sdk\...` → `C:\Tools\adb\...`
+- mitmdump：`PATH` → 常见 Python Scripts 目录 → `python -m mitmdump` 同目录
+- dev：有 `pnpm` 用 pnpm，没有用 `corepack pnpm`，再没有用 `npx nuxi`
+
+**坑 B：把签到链接转发给别人 = 别人签的是链接主人的签到**。
+群签到链接里带 `uid=<链接主人的超星 uid>`，例如
+`...&activeId=22677254&chatId=325091583918082&...&uid=462657756&ut=s`。
+对方如果直接拿这条链接去签，签到记录就挂到那个 uid 名下（看着像「怎么用的是你的数据」）。
+已在 `server/api/quick-sign.post.ts` 加校验：链接里的 `uid` 和当前登录账号不一致时直接报
+「这条签到链接属于另一个学习通账号…请用自己的手机抓自己的链接」。
+
+**给别人用的正确姿势**：发 zip 或 GitHub 链接，让对方按 `docs/INSTALL.md` 自己装、
+用自己的学习通账号登录、用自己的手机抓自己的卡片链接。**不要转发签到链接，也不要转发 `.env` 和数据库。**

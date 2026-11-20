@@ -58,6 +58,17 @@ export default defineEventHandler(async (event) => {
   if (!account)
     return ResOp.error(400, '数据库里没有学习通账号，请先正常登录一次后面板')
 
+  // 签到链接里带着 uid：和自己不一致说明拿到的是别人的链接。
+  // 别人转发你的链接时，签到记录就会挂到链接主人的账号上（「怎么签的是别人的数据」）。
+  const linkUid = link.match(/[?&]uid=(\d+)/)?.[1] ?? ''
+  if (linkUid && linkUid !== String(account.uid)) {
+    return ResOp.error(
+      400,
+      `这条签到链接属于另一个学习通账号（uid ${linkUid}），当前登录的是 ${account.uid}。`
+      + '请用自己的手机抓自己的签到卡片链接，不要转发现成的签到链接。',
+    )
+  }
+
   let cx = resolveCx(account)
   const filename = photo.filename || 'photo.jpg'
 
