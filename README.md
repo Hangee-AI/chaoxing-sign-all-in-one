@@ -128,6 +128,8 @@ Vercel 或 Netlify 的服务器设立在国外，用户需要通过一些特殊�
 
 手机端上传页是 `public/quick-sign.html`（**纯静态 + 原生 JS**，不经过 Nuxt 前端框架）——这样即使项目路径带中文、dev 模式下 Vue 页面 hydration 失败，提交按钮也照样能用。
 
+> 想直接发给同学？用 [`docs/SHARE.md`](./docs/SHARE.md)（一页说明，可直接转发）。
+
 ## 📤 分享给别人
 
 三种方式，按省事程度排：
